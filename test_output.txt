@@ -1,0 +1,9 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.13.5, pytest-9.0.2, pluggy-1.6.0
+rootdir: C:\Users\hp\Desktop\tddr
+collected 53 items
+
+tests\test_user_input_module.py ........................................ [ 75%]
+.............                                                            [100%]
+
+============================= 53 passed in 0.43s ==============================

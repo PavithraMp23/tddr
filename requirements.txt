@@ -1,0 +1,8 @@
+langdetect>=1.0.9
+pytest>=7.4.0
+
+# RAG Module dependencies
+pdfplumber>=0.10.0
+sentence-transformers>=2.7.0
+faiss-cpu>=1.8.0
+numpy>=1.26.0

@@ -1,0 +1,140 @@
+﻿python : <frozen 
+runpy>:128: 
+RuntimeWarning: 'user
+_input_module.user_in
+put_module' found in 
+sys.modules after 
+import of package 
+'user_input_module', 
+but prior to 
+execution of 'user_in
+put_module.user_input
+_module'; this may 
+result in 
+unpredictable 
+behaviour
+At line:1 char:1
++ python -m user_inpu
+t_module.user_input_m
+odule 2>&1 | 
+Out-File -FilePa ...
++ ~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~
+    + CategoryInfo   
+           : NotSpe  
+  cified: (<frozen   
+  runpy>:...table    
+ behaviour:Strin    
+g) [], RemoteExc    
+eption
+    + FullyQualified 
+   ErrorId : Native  
+  CommandError
+ 
+----------------------------------------------------------------------
+  INPUT : What was the punishment under Section 21 before 2018?
+  OUTPUT: {
+    "semantic_query": "punishment under Section 21",
+    "filters": {
+        "section_id": "21",
+        "act_name": null,
+        "valid_time": {
+            "operator": "before",
+            "reference_date": "2018-01-01",
+            "end_date": null,
+            "sql_fragment": "valid_from < '2018-01-01' AND (valid_to >= '2018-01-01' OR valid_to IS NULL)"
+        }
+    }
+}
+----------------------------------------------------------------------
+  INPUT : Define Section 375 IPC as of June 2015.
+  OUTPUT: {
+    "semantic_query": "definition of Section 375 IPC",
+    "filters": {
+        "section_id": "375",
+        "act_name": "IPC",
+        "valid_time": {
+            "operator": "as_of",
+            "reference_date": "2015-06-01",
+            "end_date": null,
+            "sql_fragment": "valid_from <= '2015-06-01' AND (valid_to > '2015-06-01' OR valid_to IS NULL)"
+        }
+    }
+}
+----------------------------------------------------------------------
+  INPUT : Was Section 124A IPC valid between 2010 and 2020?
+  OUTPUT: {
+    "semantic_query": "validity of Section 124A IPC",
+    "filters": {
+        "section_id": "124A",
+        "act_name": "IPC",
+        "valid_time": {
+            "operator": "between",
+            "reference_date": "2010-01-01",
+            "end_date": "2020-12-31",
+            "sql_fragment": "valid_from >= '2010-01-01' AND (valid_to <= '2020-12-31' OR valid_to IS NULL)"
+        }
+    }
+}
+----------------------------------------------------------------------
+  INPUT : What is the current punishment under Section 302 IPC?
+  OUTPUT: {
+    "semantic_query": "punishment under Section 302 IPC",
+    "filters": {
+        "section_id": "302",
+        "act_name": "IPC",
+        "valid_time": {
+            "operator": "current",
+            "reference_date": null,
+            "end_date": null,
+            "sql_fragment": "valid_to IS NULL"
+        }
+    }
+}
+----------------------------------------------------------------------
+  INPUT : How was Section 66A IT Act amended after 2015?
+  OUTPUT: {
+    "semantic_query": "amendments to Section 66A IT ACT",
+    "filters": {
+        "section_id": "66A",
+        "act_name": "IT ACT",
+        "valid_time": {
+            "operator": "after",
+            "reference_date": "2015-01-01",
+            "end_date": null,
+            "sql_fragment": "valid_from >= '2015-01-01'"
+        }
+    }
+}
+----------------------------------------------------------------------
+  INPUT : What does Section 21A say?
+  OUTPUT: {
+    "semantic_query": "information on Section 21A",
+    "filters": {
+        "section_id": "21A",
+        "act_name": null,
+        "valid_time": {
+            "operator": "current",
+            "reference_date": null,
+            "end_date": null,
+            "sql_fragment": "valid_to IS NULL"
+        }
+    }
+}
+----------------------------------------------------------------------
+  INPUT : Show me the latest version of Section 498A IPC.
+  OUTPUT: {
+    "semantic_query": "information on Section 498A IPC",
+    "filters": {
+        "section_id": "498A",
+        "act_name": "IPC",
+        "valid_time": {
+            "operator": "current",
+            "reference_date": null,
+            "end_date": null,
+            "sql_fragment": "valid_to IS NULL"
+        }
+    }
+}
+----------------------------------------------------------------------
