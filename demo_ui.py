@@ -9,8 +9,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # Make sure the project root is on sys.path when run directly.
 import os
-sys.path.insert(0, os.path.dirname(__file__))
-
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from user_input_module import process_query
 
 # ---------------------------------------------------------------------------
@@ -21,15 +20,101 @@ _rag_store = None        # VectorStore singleton
 _rag_chunks = []         # all ingested chunks (for retrieval)
 _rag_retriever = None    # TemporalRAGRetriever singleton
 
+# ---------------------------------------------------------------------------
+# Dummy IPC regulation data — pre-loaded at startup for end-to-end demo
+# ---------------------------------------------------------------------------
+_DUMMY_DOCS = [
+    {
+        "regulation": "IPC", "version": "1860",
+        "effective_from": "1860-01-01", "effective_to": "2017-12-31",
+        "text": (
+            "Section 21 Public Servant\n"
+            "The words 'public servant' denote a person falling under any of the descriptions hereinafter following, "
+            "including every officer in the service or pay of the Government or of any local authority.\n\n"
+            "Section 302 Punishment for Murder\n"
+            "Whoever commits murder shall be punished with death or imprisonment for life, and shall also be liable to fine.\n\n"
+            "Section 375 Rape\n"
+            "A man is said to commit rape who, except in the case hereinafter excepted, has sexual intercourse with a woman "
+            "under the circumstances of force, coercion, or without consent. The punishment shall be rigorous imprisonment "
+            "of not less than seven years, which may extend to imprisonment for life.\n\n"
+            "Section 124A Sedition\n"
+            "Whoever by words, either spoken or written, or by signs, or by visible representation, or otherwise, "
+            "brings or attempts to bring into hatred or contempt, or excites or attempts to excite disaffection towards "
+            "the Government established by law in India, shall be punished with imprisonment for life.\n\n"
+            "Section 498A Cruelty by Husband\n"
+            "Whoever, being the husband or the relative of the husband of a woman, subjects such woman to cruelty "
+            "shall be punished with imprisonment for a term which may extend to three years and shall also be liable to fine."
+        ),
+    },
+    {
+        "regulation": "IPC", "version": "2018",
+        "effective_from": "2018-01-01", "effective_to": None,
+        "text": (
+            "Section 21 Public Servant (Amended 2018)\n"
+            "The words 'public servant' denote a person falling under any of the descriptions hereinafter following. "
+            "This definition has been expanded to include members of public sector corporations and "
+            "government-aided institutions receiving central or state funds.\n\n"
+            "Section 302 Punishment for Murder (Unchanged)\n"
+            "Whoever commits murder shall be punished with death or imprisonment for life, and shall also be liable to fine.\n\n"
+            "Section 375 Rape (Amended 2018)\n"
+            "A man is said to commit rape who has sexual intercourse with a woman under circumstances of "
+            "force, coercion, or without consent. The minimum punishment has been enhanced to rigorous "
+            "imprisonment of not less than ten years, which may extend to life imprisonment or death in "
+            "cases involving victims below sixteen years of age.\n\n"
+            "Section 124A Sedition (Under Review)\n"
+            "The provision continues to exist but its constitutional validity was placed under supreme court "
+            "scrutiny. Enforcement has been stayed by order of the Supreme Court of India pending re-examination.\n\n"
+            "Section 498A Cruelty by Husband (Amended 2018)\n"
+            "Whoever, being the husband or the relative of the husband of a woman, subjects such woman to cruelty "
+            "shall be punished with imprisonment for a term which may extend to three years. "
+            "Bail provisions have been modified to require prior approval from the magistrate."
+        ),
+    },
+    {
+        "regulation": "IT_ACT", "version": "2008",
+        "effective_from": "2008-10-27", "effective_to": "2015-03-24",
+        "text": (
+            "Section 66A Punishment for sending offensive messages through communication service\n"
+            "Any person who sends, by means of a computer resource or a communication device, "
+            "any information that is grossly offensive, or has menacing character, or any information "
+            "which he knows to be false and causes annoyance, inconvenience, danger, or insult "
+            "shall be punishable with imprisonment for a term which may extend to three years and with fine."
+        ),
+    },
+    {
+        "regulation": "IT_ACT", "version": "2015",
+        "effective_from": "2015-03-25", "effective_to": None,
+        "text": (
+            "Section 66A — Struck Down\n"
+            "Section 66A of the Information Technology Act, 2000 was declared unconstitutional by the "
+            "Supreme Court of India in Shreya Singhal v. Union of India on 24 March 2015, "
+            "as it violated the fundamental right to freedom of speech and expression guaranteed under "
+            "Article 19(1)(a) of the Constitution of India. The section is no longer in force."
+        ),
+    },
+]
+
+
 def _init_rag():
     global _rag_ready, _rag_store, _rag_chunks, _rag_retriever
     try:
-        from rag_module.vector_store import VectorStore
-        from rag_module.retrieval import TemporalRAGRetriever
+        from rag_module import (
+            VectorStore, TemporalRAGRetriever,
+            ingest_document, chunk_document, embed_chunks,
+        )
         _rag_store = VectorStore()
+        # Pre-load dummy IPC/law data
+        for doc_data in _DUMMY_DOCS:
+            doc    = ingest_document(doc_data)
+            chunks = chunk_document(doc)
+            embed_chunks(chunks)
+            _rag_chunks.extend(chunks)
+        if _rag_chunks:
+            _rag_store.add_chunks(_rag_chunks)
         _rag_retriever = TemporalRAGRetriever(_rag_store, _rag_chunks)
         _rag_ready = True
-    except Exception:
+    except Exception as e:
+        print(f"  [RAG] Could not initialise (install deps to enable): {e}")
         _rag_ready = False
 
 _init_rag()
@@ -446,82 +531,64 @@ _HTML = """<!DOCTYPE html>
   </div><!-- /panel-query -->
 
 
-  <!-- ══════════════════════════════════════════════════════ TAB 2: RAG Retrieval -->
+  <!-- ══════════════════════════════════════════════════════ TAB 2: Full Pipeline -->
   <div class="tab-panel" id="panel-rag">
 
     <!-- Store status -->
     <div class="store-bar">
-      <div class="store-dot" id="store-dot"></div>
-      <span id="store-status">Vector store: empty — ingest a document below to begin.</span>
+      <div class="store-dot" id="store-dot" class="loaded"></div>
+      <span id="store-status">Vector store: loading IPC law data…</span>
     </div>
 
-    <!-- Step 1: Ingest -->
+    <!-- Pipeline query input -->
     <div class="card">
-      <div class="card-label">Step 1 · Ingest Regulation Document</div>
+      <div class="card-label">Full Pipeline · Legal Query → Module 1 → Module 2</div>
       <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">
-        Paste a JSON regulation record. Each document is chunked, embedded, and added to the vector store.
+        Enter a natural-language legal query. It is parsed by <strong>Module 1</strong> (user_input_module)
+        to extract entities, intent, and temporal constraints, then passed to <strong>Module 2</strong>
+        (rag_module) for temporally-filtered vector retrieval. No manual date entry needed.
       </p>
-      <textarea id="doc-input" class="doc-area" placeholder='{
-  "regulation": "OSHA",
-  "version": "2017",
-  "effective_from": "2017-01-01",
-  "effective_to": "2020-12-31",
-  "text": "Section 1 Chemical Storage\\nChemicals must be stored in ventilated containers away from heat sources. All storage areas must be labelled with appropriate hazard signs.\\n\\nSection 2 Handling Procedures\\nEmployees must wear protective equipment when handling corrosive materials. Gloves, goggles, and aprons are mandatory.\\n\\nSection 3 Disposal\\nChemical waste must be collected in designated containers. Disposal must comply with local environmental regulations."
-}'></textarea>
+      <textarea id="rag-query" class="query-area" rows="3"
+        placeholder="e.g.  What was the punishment under Section 302 IPC before 2018?"></textarea>
 
-      <div class="examples" style="margin-top:10px">
-        <button class="example-chip" onclick="loadExample('osha2017')">OSHA 2017</button>
-        <button class="example-chip" onclick="loadExample('osha2021')">OSHA 2021</button>
-        <button class="example-chip" onclick="loadExample('gdpr2018')">GDPR 2018</button>
+      <div class="examples" style="margin-top:12px;">
+        <button class="example-chip" onclick="useRagExample('What was the punishment under Section 302 IPC before 2018?')">Section 302 before 2018</button>
+        <button class="example-chip" onclick="useRagExample('What is the current punishment for Section 302 IPC?')">Section 302 current</button>
+        <button class="example-chip" onclick="useRagExample('Define Section 375 IPC as of June 2015')">Section 375 as of 2015</button>
+        <button class="example-chip" onclick="useRagExample('Was Section 124A IPC valid between 2010 and 2020?')">Section 124A 2010–2020</button>
+        <button class="example-chip" onclick="useRagExample('How was Section 66A IT Act amended after 2015?')">Section 66A after 2015</button>
+        <button class="example-chip" onclick="useRagExample('What does Section 21 IPC say?')">Section 21 (no date)</button>
       </div>
 
       <div class="btn-row">
-        <button class="btn-submit green" id="ingestBtn" onclick="ingestDoc()">Ingest Document</button>
-        <div class="spinner" id="ingest-spinner"></div>
-        <span id="ingest-status" style="font-size:12px;color:var(--muted);margin-left:6px;"></span>
-      </div>
-    </div>
-
-    <!-- Step 2: Retrieve -->
-    <div class="card">
-      <div class="card-label">Step 2 · Temporal Retrieval</div>
-      <p style="font-size:12px;color:var(--muted);margin-bottom:14px;">
-        Enter a query and an optional date. The system filters the vector store to only chunks active on that date <em>before</em> running similarity search.
-      </p>
-
-      <div class="two-col" style="margin-bottom:12px;">
-        <div>
-          <div class="field-label">Query</div>
-          <textarea id="rag-query" class="query-area" rows="2"
-            placeholder="e.g.  What are the chemical storage requirements?"></textarea>
-        </div>
-        <div>
-          <div class="field-label">Query Date (optional)</div>
-          <input type="text" id="rag-date" placeholder="YYYY-MM-DD  e.g. 2018-06-01" />
-          <div style="font-size:11px;color:var(--muted);margin-top:6px;">Leave blank for no temporal filter</div>
-        </div>
-      </div>
-
-      <div class="examples">
-        <button class="example-chip" onclick="useRagExample('chemical storage requirements','2018-06-01')">Chemical storage · 2018</button>
-        <button class="example-chip" onclick="useRagExample('handling corrosive materials','2017-03-01')">Corrosive handling · 2017</button>
-        <button class="example-chip" onclick="useRagExample('disposal of chemical waste','2022-01-01')">Disposal · 2022</button>
-        <button class="example-chip" onclick="useRagExample('personal data processing lawfully','')">GDPR · no date</button>
-      </div>
-
-      <div class="btn-row">
-        <button class="btn-submit purple" id="retrieveBtn" onclick="retrieve()">Retrieve</button>
-        <button class="btn-clear" onclick="clearRag()">Clear</button>
+        <button class="btn-submit purple" id="retrieveBtn" onclick="runPipeline()">Run Full Pipeline</button>
+        <button class="btn-clear" onclick="clearPipeline()">Clear</button>
         <div class="spinner" id="retrieve-spinner"></div>
-        <span class="hint">Top-5 temporally-filtered clauses</span>
+        <span class="hint">Module 1 → Module 2</span>
       </div>
     </div>
 
-    <!-- RAG Results -->
-    <div id="rag-result-section">
+    <!-- Module 1 summary -->
+    <div id="pipeline-m1-section" style="display:none">
       <div class="card">
         <div class="result-header">
-          <div class="card-label" style="margin:0">Retrieved Clauses</div>
+          <div class="card-label" style="margin:0">Module 1 · Structured Query</div>
+          <div class="pipeline-tags">
+            <span class="tag active">Layer A ✓</span>
+            <span class="tag active">Layer B ✓</span>
+            <span class="tag active">Layer B.5 ✓</span>
+            <span class="tag active">Layer C ✓</span>
+          </div>
+        </div>
+        <div class="summary-grid" id="pipeline-summary-grid"></div>
+      </div>
+    </div>
+
+    <!-- Module 2 results -->
+    <div id="rag-result-section" style="display:none">
+      <div class="card">
+        <div class="result-header">
+          <div class="card-label" style="margin:0">Module 2 · Retrieved Clauses</div>
           <div class="pipeline-tags" id="rag-pipeline-tags">
             <span class="tag purple">Temporal Filter ✓</span>
             <span class="tag purple">Vector Search ✓</span>
@@ -558,9 +625,8 @@ _HTML = """<!DOCTYPE html>
     document.getElementById(field === 'query' ? 'query' : field).value = btn.textContent.trim();
   }
 
-  function useRagExample(q, d) {
+  function useRagExample(q) {
     document.getElementById('rag-query').value = q;
-    document.getElementById('rag-date').value  = d;
   }
 
   // ── Example documents ─────────────────────────────────────────────────────
@@ -663,95 +729,94 @@ _HTML = """<!DOCTYPE html>
     });
   }
 
-  // ── Tab 2: RAG ────────────────────────────────────────────────────────────
+  // ── Tab 2: Full Pipeline ─────────────────────────────────────────────────
 
-  function updateStoreStatus(count) {
+  // Poll store status on page load
+  (async function initStoreStatus() {
+    try {
+      const res  = await fetch('/api/rag/status', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const data = await res.json();
+      updateStoreStatus(data.total_chunks || 0, data.rag_ready);
+    } catch(e) { /* ignore */ }
+  })();
+
+  function updateStoreStatus(count, ready) {
     const dot    = document.getElementById('store-dot');
     const status = document.getElementById('store-status');
-    if (count === 0) {
+    if (!ready) {
       dot.classList.remove('loaded');
-      status.textContent = 'Vector store: empty — ingest a document below to begin.';
+      status.textContent = 'RAG module unavailable — install dependencies (faiss-cpu, sentence-transformers).';
+    } else if (count === 0) {
+      dot.classList.remove('loaded');
+      status.textContent = 'Vector store: empty — still loading…';
     } else {
       dot.classList.add('loaded');
-      status.textContent = `Vector store: ${count} chunk${count===1?'':'s'} loaded and ready.`;
-    }
-  }
-
-  async function ingestDoc() {
-    const raw = document.getElementById('doc-input').value.trim();
-    if (!raw) return;
-
-    let parsed;
-    try { parsed = JSON.parse(raw); }
-    catch(e) {
-      document.getElementById('ingest-status').style.color = '#f85149';
-      document.getElementById('ingest-status').textContent = 'Invalid JSON: ' + e.message;
-      return;
-    }
-
-    document.getElementById('ingestBtn').disabled = true;
-    document.getElementById('ingest-spinner').style.display = 'inline-block';
-    document.getElementById('ingest-status').textContent = '';
-
-    try {
-      const res  = await fetch('/api/rag/ingest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ document: parsed }),
-      });
-      const data = await res.json();
-      if (data.error) {
-        document.getElementById('ingest-status').style.color = '#f85149';
-        document.getElementById('ingest-status').textContent = data.error;
-      } else {
-        document.getElementById('ingest-status').style.color = 'var(--accent2)';
-        document.getElementById('ingest-status').textContent =
-          `✓ Ingested ${data.chunks_added} chunk${data.chunks_added===1?'':'s'} from ${data.regulation} v${data.version}`;
-        updateStoreStatus(data.total_chunks);
-      }
-    } catch (err) {
-      document.getElementById('ingest-status').style.color = '#f85149';
-      document.getElementById('ingest-status').textContent = 'Network error: ' + err.message;
-    } finally {
-      document.getElementById('ingestBtn').disabled = false;
-      document.getElementById('ingest-spinner').style.display = 'none';
+      status.textContent = `Vector store ready · ${count} chunk${count===1?'':'s'} (IPC + IT Act pre-loaded).`;
     }
   }
 
   let _lastRagJson = '';
 
-  function clearRag() {
+  function clearPipeline() {
     document.getElementById('rag-query').value = '';
-    document.getElementById('rag-date').value  = '';
-    document.getElementById('rag-result-section').style.display = 'none';
-    document.getElementById('rag-error-section').style.display  = 'none';
+    document.getElementById('rag-result-section').style.display    = 'none';
+    document.getElementById('pipeline-m1-section').style.display   = 'none';
+    document.getElementById('rag-error-section').style.display     = 'none';
   }
 
-  async function retrieve() {
-    const q    = document.getElementById('rag-query').value.trim();
-    const date = document.getElementById('rag-date').value.trim() || null;
+  async function runPipeline() {
+    const q = document.getElementById('rag-query').value.trim();
     if (!q) { document.getElementById('rag-query').focus(); return; }
 
-    document.getElementById('rag-result-section').style.display = 'none';
-    document.getElementById('rag-error-section').style.display  = 'none';
+    document.getElementById('rag-result-section').style.display    = 'none';
+    document.getElementById('pipeline-m1-section').style.display   = 'none';
+    document.getElementById('rag-error-section').style.display     = 'none';
     document.getElementById('retrieveBtn').disabled = true;
     document.getElementById('retrieve-spinner').style.display = 'inline-block';
 
     try {
-      const res  = await fetch('/api/rag/retrieve', {
+      const res  = await fetch('/api/rag/pipeline', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: q, query_date: date, k: 5 }),
+        body: JSON.stringify({ query: q, k: 5 }),
       });
       const data = await res.json();
       if (data.error) showRagError(data.error);
-      else            showRagResult(data);
+      else            showPipelineResult(data);
     } catch (err) {
       showRagError('Network error: ' + err.message);
     } finally {
       document.getElementById('retrieveBtn').disabled = false;
       document.getElementById('retrieve-spinner').style.display = 'none';
     }
+  }
+
+  function showPipelineResult(data) {
+    _lastRagJson = JSON.stringify(data, null, 2);
+    const sq = data.structured_query || {};
+    const f  = sq.filters || {};
+    const vt = f.valid_time || {};
+
+    // Module 1 summary
+    const items = [
+      { label: 'Semantic Query',    value: sq.semantic_query || '—',    cls: '' },
+      { label: 'Canonical ID',      value: sq.canonical_entity_id || '—', cls: sq.canonical_entity_id ? 'highlight' : 'grey' },
+      { label: 'Entity Type',       value: sq.entity_type || '—',       cls: sq.entity_type ? '' : 'grey' },
+      { label: 'Act',               value: f.act_name || '—',           cls: f.act_name ? 'green' : 'grey' },
+      { label: 'Section (primary)', value: f.section_id || '—',         cls: f.section_id ? '' : 'grey' },
+      { label: 'Temporal Operator', value: vt.operator || '—',          cls: '' },
+      { label: 'Reference Date',    value: vt.reference_date || '—',    cls: vt.reference_date ? 'highlight' : 'grey' },
+    ];
+    document.getElementById('pipeline-summary-grid').innerHTML = items.map(it => `
+      <div class="summary-item">
+        <div class="s-label">${it.label}</div>
+        <div class="s-value ${it.cls}">${it.value}</div>
+      </div>`).join('');
+    document.getElementById('pipeline-m1-section').style.display = 'block';
+
+    // Module 2 chunks
+    showRagResult({ query_date: vt.reference_date, chunks: data.chunks || [] });
   }
 
   function showRagError(msg) {
@@ -823,7 +888,7 @@ _HTML = """<!DOCTYPE html>
 
 class _Handler(BaseHTTPRequestHandler):
 
-    def log_message(self, fmt, *args):  # silence default access log
+    def log_message(self, format, *args):  # silence default access log
         pass
 
     def _send(self, code: int, content_type: str, body: bytes):
@@ -861,11 +926,13 @@ class _Handler(BaseHTTPRequestHandler):
             try:
                 if not _rag_ready:
                     raise RuntimeError("RAG module not available. Install: pip install faiss-cpu sentence-transformers")
-                from rag_module.ingestion import ingest_document
-                from rag_module.chunking import chunk_document
-                from rag_module.embedding import embed_chunks
-                from rag_module.vector_store import VectorStore
-                from rag_module.retrieval import TemporalRAGRetriever
+                from rag_module import (
+                    ingest_document,
+                    chunk_document,
+                    embed_chunks,
+                    VectorStore,
+                    TemporalRAGRetriever,
+                )
 
                 payload = json.loads(body)
                 doc_data = payload.get("document", {})
@@ -895,13 +962,66 @@ class _Handler(BaseHTTPRequestHandler):
                 err = json.dumps({"error": str(exc)}).encode()
                 self._send(200, "application/json; charset=utf-8", err)
 
-        # ── /api/rag/retrieve (Module 2 – step 2) ───────────────────────────
+        # ── /api/rag/status ─────────────────────────────────────────────────
+        elif self.path == "/api/rag/status":
+            resp = json.dumps({
+                "rag_ready":    _rag_ready,
+                "total_chunks": len(_rag_chunks),
+            }).encode()
+            self._send(200, "application/json; charset=utf-8", resp)
+
+        # ── /api/rag/pipeline (Full end-to-end: Module 1 → Module 2) ─────────
+        elif self.path == "/api/rag/pipeline":
+            try:
+                if not _rag_ready or _rag_retriever is None:
+                    raise RuntimeError(
+                        "RAG module not initialised. "
+                        "Install dependencies: pip install faiss-cpu sentence-transformers"
+                    )
+
+                payload = json.loads(body)
+                raw_q   = payload.get("query", "").strip()
+                k       = int(payload.get("k", 5))
+
+                if not raw_q:
+                    raise ValueError("Query is empty.")
+
+                # Module 1: parse natural-language query → StructuredQuery
+                sq = process_query(raw_q)
+
+                # Module 2: retrieve using the StructuredQuery
+                # retrieve_from_structured extracts semantic_query and
+                # reference_date automatically from the StructuredQuery.
+                results = _rag_retriever.retrieve_from_structured(sq, k=k)
+
+                resp = json.dumps({
+                    "raw_query":       raw_q,
+                    "structured_query": sq.to_dict(),
+                    "chunks": [
+                        {
+                            "chunk_id":       c.chunk_id,
+                            "regulation":     c.regulation,
+                            "version":        c.version,
+                            "effective_from": c.effective_from,
+                            "effective_to":   c.effective_to,
+                            "text":           c.text,
+                        }
+                        for c in results
+                    ],
+                }, indent=2).encode()
+                self._send(200, "application/json; charset=utf-8", resp)
+
+            except Exception as exc:
+                err = json.dumps({"error": str(exc)}).encode()
+                self._send(200, "application/json; charset=utf-8", err)
+
+        # ── /api/rag/retrieve (legacy: raw query + manual date) ───────────────
         elif self.path == "/api/rag/retrieve":
             try:
                 if not _rag_ready or _rag_retriever is None:
-                    raise RuntimeError("RAG module not available. Ingest at least one document first.")
+                    raise RuntimeError("RAG module not available.")
                 if not _rag_chunks:
-                    raise ValueError("Vector store is empty — please ingest a document first.")
+                    raise ValueError("Vector store is empty.")
 
                 payload    = json.loads(body)
                 query      = payload.get("query", "").strip()

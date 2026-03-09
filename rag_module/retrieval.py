@@ -137,7 +137,20 @@ class TemporalRAGRetriever:
 
         Extracts:
         * ``semantic_query``                    → search string
-        * ``filters.valid_time.reference_date`` → query_date
+        * ``filters.valid_time``                → operator + dates → query_date
+
+        Operator → query_date mapping
+        ------------------------------
+        ``before``   → one day before reference_date
+                        (find chunks active in the era *preceding* the date)
+        ``after``    → reference_date itself
+                        (find chunks active from that date onward)
+        ``as_of``    → reference_date
+                        (find chunks active exactly on that date)
+        ``between``  → reference_date
+                        (find chunks active at the start of the range)
+        ``in_year``  → reference_date (start of year)
+        ``current``  → None  (no temporal filter; return all active chunks)
 
         Parameters
         ----------
@@ -148,8 +161,28 @@ class TemporalRAGRetriever:
         -------
         List[RegulationChunk]
         """
+        from datetime import date, timedelta
+
         query_text = structured_query.semantic_query
-        query_date = structured_query.filters.valid_time.reference_date
+        vt = structured_query.filters.valid_time
+        operator = vt.operator
+        ref_date_str = vt.reference_date
+
+        if operator == "current" or ref_date_str is None:
+            # No temporal constraint — search across all chunks
+            query_date = None
+        elif operator == "before":
+            # We want chunks that were active just before the reference date.
+            # Subtract one day so the filter includes chunks whose effective_to
+            # equals the day before the boundary (e.g. 2017-12-31 for "before 2018").
+            try:
+                rd = date.fromisoformat(ref_date_str)
+                query_date = (rd - timedelta(days=1)).isoformat()
+            except (ValueError, TypeError):
+                query_date = ref_date_str
+        else:
+            # after / as_of / between / in_year — use reference_date as-is
+            query_date = ref_date_str
 
         return self.retrieve(query_text, query_date=query_date, k=k)
 
