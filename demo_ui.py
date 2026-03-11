@@ -21,6 +21,11 @@ _rag_chunks = []         # all ingested chunks (for retrieval)
 _rag_retriever = None    # TemporalRAGRetriever singleton
 
 # ---------------------------------------------------------------------------
+# LLM module (Module 3) — imported lazily
+# ---------------------------------------------------------------------------
+_llm_ready = False
+
+# ---------------------------------------------------------------------------
 # Dummy IPC regulation data — pre-loaded at startup for end-to-end demo
 # ---------------------------------------------------------------------------
 _DUMMY_DOCS = [
@@ -445,6 +450,23 @@ _HTML = """<!DOCTYPE html>
       border-radius: 8px; padding: 14px;
     }
 
+    /* ── LLM config select & input ── */
+    .llm-select, .llm-input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      padding: 9px 12px;
+      outline: none;
+      transition: border-color .2s;
+    }
+    .llm-select { cursor: pointer; }
+    .llm-select:focus, .llm-input:focus { border-color: var(--purple); }
+    .llm-select option { background: var(--surface); }
+
     #result-section  { display: none; }
     #rag-result-section { display: none; }
   </style>
@@ -456,9 +478,10 @@ _HTML = """<!DOCTYPE html>
     <div class="logo">TDDR</div>
     <div class="logo-sub">Temporal Regulation Drift Detector</div>
   </div>
-  <div class="header-right">
+    <div class="header-right">
     <div class="badge">Module 1 &nbsp;&#x2713;</div>
     <div class="badge green">Module 2 RAG &nbsp;&#x2713;</div>
+    <div class="badge" style="color:var(--purple);background:rgba(188,140,255,.1);border-color:rgba(188,140,255,.25);">Module 3 LLM &nbsp;&#x2713;</div>
   </div>
 </header>
 
@@ -469,6 +492,9 @@ _HTML = """<!DOCTYPE html>
   </button>
   <button class="tab-btn" id="tab-rag" onclick="switchTab('rag')">
     <span class="dot"></span> RAG Retrieval
+  </button>
+  <button class="tab-btn" id="tab-llm" onclick="switchTab('llm')">
+    <span class="dot" style="background:var(--purple);"></span> Full Pipeline — LLM Answer
   </button>
 </div>
 
@@ -604,10 +630,177 @@ _HTML = """<!DOCTYPE html>
 
   </div><!-- /panel-rag -->
 
+
+  <!-- ══════════════════════════════════════════════════════ TAB 3: Full Pipeline - LLM Answer -->
+  <div class="tab-panel" id="panel-llm">
+
+    <!-- Store status bar (reused) -->
+    <div class="store-bar" id="llm-store-bar">
+      <div class="store-dot" id="llm-store-dot"></div>
+      <span id="llm-store-status">Vector store: checking…</span>
+    </div>
+
+    <!-- Pipeline architecture diagram -->
+    <div class="card" style="padding:18px 22px;">
+      <div class="card-label">Full Pipeline Architecture</div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:2px;">
+        <div style="text-align:center;">
+          <div class="tag" style="font-size:12px;padding:5px 12px;color:var(--text);">💬 User Query</div>
+        </div>
+        <span style="color:var(--muted);">→</span>
+        <div style="text-align:center;">
+          <div class="tag active" style="font-size:12px;padding:5px 12px;">Module 1</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:3px;">user_input_module</div>
+        </div>
+        <span style="color:var(--muted);">→</span>
+        <div style="text-align:center;">
+          <div class="tag" style="font-size:12px;padding:5px 12px;color:var(--accent2);background:rgba(63,185,80,.1);border-color:rgba(63,185,80,.3);">Module 2</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:3px;">rag_module</div>
+        </div>
+        <span style="color:var(--muted);">→</span>
+        <div style="text-align:center;">
+          <div class="tag" style="font-size:12px;padding:5px 12px;color:var(--purple);background:rgba(188,140,255,.1);border-color:rgba(188,140,255,.3);">Module 3</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:3px;">llm_module</div>
+        </div>
+        <span style="color:var(--muted);">→</span>
+        <div style="text-align:center;">
+          <div class="tag" style="font-size:12px;padding:5px 12px;color:var(--warn);background:rgba(210,153,34,.1);border-color:rgba(210,153,34,.3);">✨ Answer</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Query input -->
+    <div class="card">
+      <div class="card-label">Legal Query</div>
+      <textarea id="llm-query" class="query-area" rows="3"
+        placeholder="e.g.  What was the punishment under Section 302 IPC before 2018?"></textarea>
+
+      <div class="examples" style="margin-top:10px;">
+        <button class="example-chip" onclick="useLlmExample('What was the punishment under Section 302 IPC before 2018?')">Section 302 before 2018</button>
+        <button class="example-chip" onclick="useLlmExample('Define Section 375 IPC as of June 2015')">Section 375 as of 2015</button>
+        <button class="example-chip" onclick="useLlmExample('Was Section 66A IT Act valid after 2015?')">Section 66A after 2015</button>
+        <button class="example-chip" onclick="useLlmExample('What is the current punishment for murder under IPC?')">Murder punishment (current)</button>
+        <button class="example-chip" onclick="useLlmExample('Explain Section 124A sedition law between 2010 and 2020')">Sedition 2010–2020</button>
+      </div>
+
+      <!-- LLM config -->
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
+        <div class="card-label" style="margin-bottom:10px;">LLM Backend Configuration</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;align-items:end;">
+          <div>
+            <div class="field-label">Backend</div>
+            <select id="llm-backend" class="llm-select" onchange="onBackendChange()">
+              <option value="mock">🧪 Mock (no setup)</option>
+              <option value="ollama">💻 Ollama (local)</option>
+              <option value="openai">🌐 OpenAI</option>
+              <option value="huggingface">🤗 HuggingFace</option>
+            </select>
+          </div>
+          <div>
+            <div class="field-label">Model</div>
+            <input id="llm-model" type="text" class="llm-input" placeholder="auto" />
+          </div>
+          <div>
+            <div class="field-label">API Key (if needed)</div>
+            <input id="llm-apikey" type="password" class="llm-input" placeholder="sk-... or hf_..."/>
+          </div>
+        </div>
+        <div id="llm-backend-hint" style="margin-top:8px;font-size:11px;color:var(--muted);">
+          Mock backend requires no setup — ideal for demos and testing.
+        </div>
+      </div>
+
+      <div class="btn-row" style="margin-top:14px;">
+        <button class="btn-submit" style="background:var(--purple);" id="llmBtn" onclick="runLLMPipeline()">✨ Generate Answer</button>
+        <button class="btn-clear" onclick="clearLLM()">Clear</button>
+        <div class="spinner" id="llm-spinner"></div>
+        <span class="hint">Module 1 → Module 2 → Module 3</span>
+      </div>
+    </div>
+
+    <!-- Pipeline progress indicator -->
+    <div id="llm-pipeline-progress" style="display:none;">
+      <div style="display:flex;align-items:center;gap:8px;padding:12px 18px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);">
+        <span style="font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;">Pipeline:</span>
+        <span class="tag" id="prog-m1">M1: Parsing</span>
+        <span style="color:var(--muted);">→</span>
+        <span class="tag" id="prog-m2">M2: Retrieving</span>
+        <span style="color:var(--muted);">→</span>
+        <span class="tag" id="prog-m3">M3: Generating</span>
+      </div>
+    </div>
+
+    <!-- Module 1 structured query summary -->
+    <div id="llm-m1-section" style="display:none;">
+      <div class="card">
+        <div class="result-header">
+          <div class="card-label" style="margin:0">Module 1 — Structured Query</div>
+          <div class="pipeline-tags">
+            <span class="tag active">Layer A ✓</span>
+            <span class="tag active">Layer B ✓</span>
+            <span class="tag active">Layer B.5 ✓</span>
+            <span class="tag active">Layer C ✓</span>
+          </div>
+        </div>
+        <div class="summary-grid" id="llm-m1-summary"></div>
+      </div>
+    </div>
+
+    <!-- Module 2 retrieved chunks (collapsed) -->
+    <div id="llm-m2-section" style="display:none;">
+      <div class="card">
+        <div class="result-header">
+          <div class="card-label" style="margin:0">Module 2 — Retrieved Regulation Chunks</div>
+          <div class="pipeline-tags" id="llm-m2-tags"></div>
+        </div>
+        <div class="chunk-list" id="llm-chunk-list"></div>
+      </div>
+    </div>
+
+    <!-- Module 3 LLM Answer -->
+    <div id="llm-m3-section" style="display:none;">
+
+      <!-- Main answer card -->
+      <div class="card" style="border-color:rgba(188,140,255,.35);background:linear-gradient(135deg,rgba(188,140,255,.05),rgba(63,185,80,.03));">
+        <div class="result-header">
+          <div class="card-label" style="margin:0;color:var(--purple);">✨ Module 3 — LLM Generated Answer</div>
+          <div class="pipeline-tags" id="llm-m3-tags"></div>
+        </div>
+
+        <div id="llm-answer-text" style="
+          font-size:15px;line-height:1.75;color:var(--text);
+          padding:16px;background:var(--bg);border:1px solid var(--border);
+          border-radius:8px;margin-bottom:14px;white-space:pre-wrap;
+        "></div>
+
+        <!-- Citations -->
+        <div id="llm-citations-row" style="display:none;margin-bottom:14px;">
+          <div class="card-label">Cited Sections</div>
+          <div id="llm-citations" style="display:flex;flex-wrap:wrap;gap:7px;"></div>
+        </div>
+
+        <!-- Explanation -->
+        <div id="llm-explanation-row" style="display:none;">
+          <div class="card-label">Legal Basis</div>
+          <div id="llm-explanation" style="
+            font-size:13px;line-height:1.65;color:var(--muted);
+            padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;
+          "></div>
+        </div>
+      </div>
+
+    </div><!-- /llm-m3-section -->
+
+    <div id="llm-error-section" style="display:none;">
+      <div class="error-msg" id="llm-error-msg"></div>
+    </div>
+
+  </div><!-- /panel-llm -->
+
 </main>
 
 <script>
-  // ── Tab switching ─────────────────────────────────────────────────────────
+  // ── Tab switching ────────────────────────────────────────────────────────────
   function switchTab(name) {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -863,7 +1056,194 @@ _HTML = """<!DOCTYPE html>
     return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
-  // ── JSON syntax highlighter ───────────────────────────────────────────────
+  // ── Tab 3: Full Pipeline (M1 → M2 → M3 LLM) ─────────────────────────────
+
+  const _BACKEND_HINTS = {
+    mock:        'Mock backend requires no setup — ideal for demos and testing.',
+    ollama:      'Runs locally via Ollama. Start Ollama first: ollama serve. Default model: mistral.',
+    openai:      'Requires an OpenAI API key (sk-...). Default model: gpt-3.5-turbo.',
+    huggingface: 'Requires a HuggingFace API key (hf_...) or uses free tier. Default model: mistralai/Mistral-7B-Instruct-v0.1.',
+  };
+  const _BACKEND_MODEL_DEFAULTS = {
+    mock: '', ollama: 'mistral', openai: 'gpt-3.5-turbo',
+    huggingface: 'mistralai/Mistral-7B-Instruct-v0.1',
+  };
+
+  function onBackendChange() {
+    const b    = document.getElementById('llm-backend').value;
+    const hint = document.getElementById('llm-backend-hint');
+    const mdl  = document.getElementById('llm-model');
+    hint.textContent = _BACKEND_HINTS[b] || '';
+    mdl.placeholder  = _BACKEND_MODEL_DEFAULTS[b] || 'auto';
+  }
+
+  function useLlmExample(q) {
+    document.getElementById('llm-query').value = q;
+  }
+
+  function clearLLM() {
+    document.getElementById('llm-query').value = '';
+    ['llm-m1-section','llm-m2-section','llm-m3-section',
+     'llm-error-section','llm-pipeline-progress'].forEach(id => {
+      document.getElementById(id).style.display = 'none';
+    });
+  }
+
+  // Poll store status for LLM tab on first load
+  (async function initLLMStoreStatus() {
+    try {
+      const res  = await fetch('/api/rag/status', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const data = await res.json();
+      const dot    = document.getElementById('llm-store-dot');
+      const status = document.getElementById('llm-store-status');
+      if (data.rag_ready && data.total_chunks > 0) {
+        dot.classList.add('loaded');
+        status.textContent = `Vector store ready · ${data.total_chunks} chunks pre-loaded. LLM module active.`;
+      } else {
+        status.textContent = 'RAG module unavailable — install dependencies.';
+      }
+    } catch(e) { /* ignore */ }
+  })();
+
+  function _setPipelineTag(id, cls, text) {
+    const el = document.getElementById(id);
+    el.className = 'tag ' + cls;
+    el.textContent = text;
+  }
+
+  async function runLLMPipeline() {
+    const q = document.getElementById('llm-query').value.trim();
+    if (!q) { document.getElementById('llm-query').focus(); return; }
+
+    const backend = document.getElementById('llm-backend').value;
+    const model   = document.getElementById('llm-model').value.trim() || null;
+    const apiKey  = document.getElementById('llm-apikey').value.trim() || null;
+
+    // Reset UI
+    ['llm-m1-section','llm-m2-section','llm-m3-section','llm-error-section']
+      .forEach(id => document.getElementById(id).style.display = 'none');
+
+    // Show pipeline progress
+    document.getElementById('llm-pipeline-progress').style.display = 'block';
+    _setPipelineTag('prog-m1', 'warn', 'M1: Parsing…');
+    _setPipelineTag('prog-m2', '',     'M2: Retrieving');
+    _setPipelineTag('prog-m3', '',     'M3: Generating');
+
+    document.getElementById('llmBtn').disabled = true;
+    document.getElementById('llm-spinner').style.display = 'inline-block';
+
+    try {
+      // Animate progress tags
+      await new Promise(r => setTimeout(r, 300));
+      _setPipelineTag('prog-m1', 'ok', 'M1: Done ✓');
+      _setPipelineTag('prog-m2', 'warn', 'M2: Retrieving…');
+      await new Promise(r => setTimeout(r, 300));
+      _setPipelineTag('prog-m2', 'ok', 'M2: Done ✓');
+      _setPipelineTag('prog-m3', 'warn', 'M3: Generating…');
+
+      const res  = await fetch('/api/llm/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: q, k: 5, backend, model, api_key: apiKey }),
+      });
+      const data = await res.json();
+
+      _setPipelineTag('prog-m3', data.error ? 'error' : 'ok',
+                      data.error ? 'M3: Error' : 'M3: Done ✓');
+
+      if (data.error) showLLMError(data.error);
+      else            showLLMResult(data);
+    } catch (err) {
+      _setPipelineTag('prog-m3', 'error', 'M3: Error');
+      showLLMError('Network error: ' + err.message);
+    } finally {
+      document.getElementById('llmBtn').disabled = false;
+      document.getElementById('llm-spinner').style.display = 'none';
+    }
+  }
+
+  function showLLMError(msg) {
+    document.getElementById('llm-error-msg').textContent = msg;
+    document.getElementById('llm-error-section').style.display = 'block';
+  }
+
+  function showLLMResult(data) {
+    const sq  = data.structured_query || {};
+    const f   = sq.filters || {};
+    const vt  = f.valid_time || {};
+    const llm = data.llm_response || {};
+    const chunks = data.chunks || [];
+
+    // ── Module 1 summary
+    const m1Items = [
+      { label: 'Semantic Query',   value: sq.semantic_query || '—',    cls: '' },
+      { label: 'Act',              value: f.act_name || '—',           cls: f.act_name ? 'green' : 'grey' },
+      { label: 'Section',         value: f.section_id || '—',         cls: f.section_id ? '' : 'grey' },
+      { label: 'Temporal Op',     value: vt.operator || '—',          cls: '' },
+      { label: 'Reference Date',  value: vt.reference_date || '—',    cls: vt.reference_date ? 'highlight' : 'grey' },
+      { label: 'Canonical ID',    value: sq.canonical_entity_id || '—', cls: sq.canonical_entity_id ? 'highlight' : 'grey' },
+    ];
+    document.getElementById('llm-m1-summary').innerHTML = m1Items.map(it => `
+      <div class="summary-item">
+        <div class="s-label">${it.label}</div>
+        <div class="s-value ${it.cls}">${it.value}</div>
+      </div>`).join('');
+    document.getElementById('llm-m1-section').style.display = 'block';
+
+    // ── Module 2 chunks
+    const m2Tags = document.getElementById('llm-m2-tags');
+    const dateLabel = vt.reference_date
+      ? `Temporal Filter · ${vt.reference_date} ✓`
+      : 'Temporal Filter · all time ✓';
+    m2Tags.innerHTML = `
+      <span class="tag" style="color:var(--accent2);border-color:rgba(63,185,80,.3);background:rgba(63,185,80,.1);">${dateLabel}</span>
+      <span class="tag" style="color:var(--accent2);border-color:rgba(63,185,80,.3);background:rgba(63,185,80,.1);">Vector Search ✓</span>
+      <span class="tag ok">${chunks.length} chunk${chunks.length===1?'':'s'}</span>`;
+    document.getElementById('llm-chunk-list').innerHTML = chunks.length === 0
+      ? '<div style="color:var(--muted);font-size:13px;padding:8px 0;">No chunks matched for the given time period.</div>'
+      : chunks.map((c, i) => `
+        <div class="chunk-card">
+          <div class="chunk-meta">
+            <div class="chunk-rank">${i+1}</div>
+            <span class="tag" style="color:var(--accent2);background:rgba(63,185,80,.1);border-color:rgba(63,185,80,.3);">${c.regulation}</span>
+            <span class="tag ok">v${c.version}</span>
+            <span class="tag">${c.effective_from}${c.effective_to ? ' → '+c.effective_to : ' → now'}</span>
+          </div>
+          <div class="chunk-text">${escHtml(c.text)}</div>
+        </div>`).join('');
+    document.getElementById('llm-m2-section').style.display = 'block';
+
+    // ── Module 3 LLM answer
+    const confColor = { high: 'var(--accent2)', medium: 'var(--warn)', low: '#f85149' };
+    const confBg    = { high: 'rgba(63,185,80,.1)', medium: 'rgba(210,153,34,.1)', low: 'rgba(248,81,73,.1)' };
+    const conf      = (llm.confidence || 'low').toLowerCase();
+
+    document.getElementById('llm-m3-tags').innerHTML = `
+      <span class="tag" style="color:var(--purple);background:rgba(188,140,255,.1);border-color:rgba(188,140,255,.3);">Model: ${escHtml(llm.model_used || '?')}</span>
+      <span class="tag" style="color:${confColor[conf]||confColor.low};background:${confBg[conf]||confBg.low};">Confidence: ${conf}</span>
+      <span class="tag" style="color:var(--muted);">Prompt: ~${llm.prompt_tokens || 0} tokens</span>`;
+
+    document.getElementById('llm-answer-text').textContent = llm.answer || '(no answer generated)';
+
+    // Citations
+    const cits = llm.cited_sections || [];
+    if (cits.length > 0) {
+      document.getElementById('llm-citations').innerHTML = cits.map(s =>
+        `<span class="tag" style="color:var(--purple);background:rgba(188,140,255,.1);border-color:rgba(188,140,255,.3);font-size:12px;">${escHtml(s)}</span>`
+      ).join('');
+      document.getElementById('llm-citations-row').style.display = 'block';
+    }
+
+    // Explanation
+    if (llm.explanation) {
+      document.getElementById('llm-explanation').textContent = llm.explanation;
+      document.getElementById('llm-explanation-row').style.display = 'block';
+    }
+
+    document.getElementById('llm-m3-section').style.display = 'block';
+  }
+
   function colorJson(str) {
     return str
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -1015,6 +1395,7 @@ class _Handler(BaseHTTPRequestHandler):
                 err = json.dumps({"error": str(exc)}).encode()
                 self._send(200, "application/json; charset=utf-8", err)
 
+
         # ── /api/rag/retrieve (legacy: raw query + manual date) ───────────────
         elif self.path == "/api/rag/retrieve":
             try:
@@ -1054,8 +1435,66 @@ class _Handler(BaseHTTPRequestHandler):
                 err = json.dumps({"error": str(exc)}).encode()
                 self._send(200, "application/json; charset=utf-8", err)
 
+        # ── /api/llm/generate (Full pipeline: Module 1 → Module 2 → Module 3) ─
+        elif self.path == "/api/llm/generate":
+            try:
+                if not _rag_ready or _rag_retriever is None:
+                    raise RuntimeError(
+                        "RAG module not initialised. "
+                        "Install dependencies: pip install faiss-cpu sentence-transformers"
+                    )
+
+                payload  = json.loads(body)
+                raw_q    = payload.get("query", "").strip()
+                k        = int(payload.get("k", 5))
+                backend  = payload.get("backend", "mock") or "mock"
+                model    = payload.get("model") or None
+                api_key  = payload.get("api_key") or None
+
+                if not raw_q:
+                    raise ValueError("Query is empty.")
+
+                # Module 1: natural-language query → StructuredQuery
+                sq = process_query(raw_q)
+
+                # Module 2: retrieve temporally-filtered regulation chunks
+                results = _rag_retriever.retrieve_from_structured(sq, k=k)
+
+                # Module 3: generate a grounded, cited LLM answer
+                from llm_module import generate_answer
+                llm_response = generate_answer(
+                    sq,
+                    results,
+                    backend=backend,
+                    model=model,
+                    api_key=api_key,
+                )
+
+                resp = json.dumps({
+                    "raw_query":        raw_q,
+                    "structured_query": sq.to_dict(),
+                    "chunks": [
+                        {
+                            "chunk_id":       c.chunk_id,
+                            "regulation":     c.regulation,
+                            "version":        c.version,
+                            "effective_from": c.effective_from,
+                            "effective_to":   c.effective_to,
+                            "text":           c.text,
+                        }
+                        for c in results
+                    ],
+                    "llm_response": llm_response.to_dict(),
+                }, indent=2).encode()
+                self._send(200, "application/json; charset=utf-8", resp)
+
+            except Exception as exc:
+                err = json.dumps({"error": str(exc)}).encode()
+                self._send(200, "application/json; charset=utf-8", err)
+
         else:
             self._send(404, "application/json", b'{"error":"not found"}')
+
 
 
 # ---------------------------------------------------------------------------
