@@ -38,7 +38,7 @@ _DEFAULT_MODELS = {
 }
 
 _OLLAMA_URL    = "http://localhost:11434/api/generate"
-_HF_API_URL    = "https://api-inference.huggingface.co/models/{model}"
+_HF_API_URL    = "https://router.huggingface.co/{model}"
 
 
 # ---------------------------------------------------------------------------
