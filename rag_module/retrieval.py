@@ -120,17 +120,39 @@ class TemporalRAGRetriever:
             # else: fall back to all temporally-valid chunks
 
         # Step 1c: version pre-filter
+        # Strategy: keep amendment chunks that match the requested version refs,
+        # PLUS always keep the base (non-amendment) chunks of the same regulation
+        # so the LLM has context for what the original rule said.
         if version_filters:
-            ver_filtered = []
-            for c in valid_chunks:
-                if c.version is None:
-                    continue
-                # If ANY version ref is found in the chunk's version string
-                if any(v.lower() in str(c.version).lower() for v in version_filters):
-                    ver_filtered.append(c)
-            
-            if ver_filtered:
-                valid_chunks = ver_filtered
+            # Keywords that signal an amendment version (not a base document)
+            _AMD_KEYWORDS = {
+                'feb', 'feb_amd', 'jul', 'jul_amd', 'jun', 'jun_amd',
+                'mar', 'mar_amd', 'apr', 'apr_amd', 'aug', 'aug_amd',
+                'sep', 'oct', 'nov', 'dec', 'amd', 'amendment',
+            }
+
+            # Chunks that match any of the requested version refs
+            ver_filtered = [
+                c for c in valid_chunks
+                if c.version is not None
+                and any(v.lower() in str(c.version).lower() for v in version_filters)
+            ]
+
+            # Base chunks: same regulation present in ver_filtered, but version
+            # string contains NO amendment keywords (i.e. the consolidated base doc)
+            target_regs = {c.regulation for c in ver_filtered}
+            base_chunks = [
+                c for c in valid_chunks
+                if c.regulation in target_regs
+                and not any(kw in str(c.version).lower() for kw in _AMD_KEYWORDS)
+            ]
+
+            # Union — amendment chunks take priority on duplicate chunk_id
+            combined = list(
+                {c.chunk_id: c for c in (base_chunks + ver_filtered)}.values()
+            )
+            if combined:
+                valid_chunks = combined
 
         # Step 2: build a temporary mini-store over valid chunks only
         # (avoids rebuilding the full index on every call while still
