@@ -66,8 +66,9 @@ def _parse_filename_metadata(filepath: str) -> dict:
     if year:
         meta["version"] = year
         meta["effective_from"] = f"{year}-01-01"
-        # Heuristic: assume a 4-year validity window unless caller overrides
-        meta["effective_to"] = f"{int(year) + 4}-12-31"
+        # Do NOT guess effective_to from the filename — laws can stay in
+        # force for decades.  Leave as None ('currently active') unless
+        # the caller supplies an explicit override via metadata={...}.
 
     return meta
 

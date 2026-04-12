@@ -108,6 +108,7 @@ def process_query(raw_text: str) -> StructuredQuery:
         act_name=ir.act_name,
         canonical_entity_id=normalized.canonical_id,
         canonical_entity_ids=normalized.canonical_ids,
+        version_refs=ir.version_refs,
         valid_time=valid_time,
     )
 

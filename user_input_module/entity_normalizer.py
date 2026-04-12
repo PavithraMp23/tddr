@@ -90,6 +90,12 @@ _ACT_ALIASES: dict[str, str] = {
     # Negotiable Instruments Act
     "negotiable instruments act": "NIA",
     "nia": "NIA",
+
+    # Hazardous and Other Waste Management Rules
+    "hwm": "HOWM",
+    "howm": "HOWM",
+    "hazardous waste management": "HOWM",
+    "hazardous and other waste": "HOWM",
 }
 
 # Sentinel used when no act token is available.

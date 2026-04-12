@@ -41,6 +41,7 @@ class IntermediateRepresentation:
     act_name: Optional[str] = None
     intent: str = "general"
     temporal_expression: Optional[str] = None
+    version_refs: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -83,6 +84,7 @@ class QueryFilters:
     act_name: Optional[str] = None
     canonical_entity_id: Optional[str] = None
     canonical_entity_ids: List[str] = field(default_factory=list)
+    version_refs: List[str] = field(default_factory=list)
     valid_time: ValidTimeFilter = field(
         default_factory=lambda: ValidTimeFilter(operator="current")
     )
@@ -94,6 +96,7 @@ class QueryFilters:
             "act_name": self.act_name,
             "canonical_entity_id": self.canonical_entity_id,
             "canonical_entity_ids": self.canonical_entity_ids,
+            "version_refs": self.version_refs,
             "valid_time": self.valid_time.to_dict(),
         }
 

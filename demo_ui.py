@@ -178,13 +178,27 @@ def _init_rag():
             _rag_chunks.extend(chunks)
 
         # Ingest real PDFs from the data/ directory
+        # Metadata overrides for PDFs whose filenames don't follow
+        # the <REGULATION>_<YEAR>.pdf convention.
+        _PDF_META = {
+            "HWM_Rules_2016.pdf":        {"regulation": "HOWM", "version": "2016",
+                                          "effective_from": "2016-04-01"},
+            "Feb_Amendment_HOWM.pdf":     {"regulation": "HOWM", "version": "2016_feb_amd",
+                                          "effective_from": "2016-02-01"},
+            "June_Amendemnet_HOWM.pdf":   {"regulation": "HOWM", "version": "2016_jun_amd",
+                                          "effective_from": "2016-06-01"},
+            "July_Amendment_HOWM.pdf":    {"regulation": "HOWM", "version": "2016_jul_amd",
+                                          "effective_from": "2016-07-01"},
+        }
         data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
         if os.path.isdir(data_dir):
             pdf_paths = sorted(_glob.glob(os.path.join(data_dir, "*.pdf")))
             for pdf_path in pdf_paths:
                 try:
-                    print(f"  [RAG] Ingesting PDF: {os.path.basename(pdf_path)} ...")
-                    doc = ingest_document(pdf_path)
+                    fname = os.path.basename(pdf_path)
+                    meta_override = _PDF_META.get(fname)
+                    print(f"  [RAG] Ingesting PDF: {fname} ...")
+                    doc = ingest_document(pdf_path, metadata=meta_override)
                     chunks = chunk_document(doc)
                     embed_chunks(chunks)
                     _rag_chunks.extend(chunks)
@@ -192,6 +206,30 @@ def _init_rag():
                           f"(regulation={doc.regulation}, version={doc.version})")
                 except Exception as pdf_err:
                     print(f"  [RAG]   ✗ Failed: {pdf_err}")
+
+        # Auto-chain temporal versions: when multiple versions of
+        # the same regulation exist, set older version's effective_to
+        # to (newer version's effective_from − 1 day).
+        from datetime import date as _date, timedelta as _td
+        from collections import defaultdict as _defaultdict
+        reg_groups = _defaultdict(list)
+        for c in _rag_chunks:
+            reg_groups[c.regulation].append(c)
+        for reg, group in reg_groups.items():
+            versions = sorted(set(c.effective_from for c in group if c.effective_from))
+            if len(versions) < 2:
+                continue
+            for i in range(len(versions) - 1):
+                older_from = versions[i]
+                newer_from = versions[i + 1]
+                try:
+                    boundary = (_date.fromisoformat(newer_from) - _td(days=1)).isoformat()
+                except (ValueError, TypeError):
+                    continue
+                for c in group:
+                    if c.effective_from == older_from and c.effective_to is None:
+                        c.effective_to = boundary
+            print(f"  [RAG] Auto-chained {len(versions)} versions of {reg}")
 
         if _rag_chunks:
             _rag_store.add_chunks(_rag_chunks)

@@ -47,6 +47,10 @@ _KNOWN_ACTS = [
     "gst act",
     "arms act",
     "negotiable instruments act",
+    "hwm",
+    "howm",
+    "hazardous waste management",
+    "hazardous and other waste",
 ]
 
 
@@ -182,6 +186,27 @@ def _extract_temporal_expression(text: str) -> Optional[str]:
 
 # Public interface
 
+from typing import List
+
+def _extract_version_refs(text: str) -> List[str]:
+    """
+    Extract specific version references like 'feb amendment' or '2019 version'.
+    Normalizes 'february' -> 'feb', 'july' -> 'jul', etc.
+    """
+    import re
+    refs = []
+    if re.search(r'\b(feb|february)\b', text):
+        refs.append('feb')
+    if re.search(r'\b(jul|july)\b', text):
+        refs.append('jul')
+    if re.search(r'\b(jun|june)\b', text):
+        refs.append('jun')
+    
+    for m in re.finditer(r'\b(19\d{2}|20\d{2})\b', text):
+        refs.append(m.group(1))
+
+    return refs
+
 def parse(raw_query: RawQuery) -> IntermediateRepresentation:
     """
     Parse *raw_query* and return an :class:`IntermediateRepresentation`.
@@ -211,6 +236,7 @@ def parse(raw_query: RawQuery) -> IntermediateRepresentation:
     entity = _build_entity_string(section_ids, act_name)
     intent = _classify_intent(text)
     temporal_expression = _extract_temporal_expression(text)
+    version_refs = _extract_version_refs(text)
 
     result = IntermediateRepresentation(
         entity=entity,
@@ -219,6 +245,7 @@ def parse(raw_query: RawQuery) -> IntermediateRepresentation:
         act_name=act_name,
         intent=intent,
         temporal_expression=temporal_expression,
+        version_refs=version_refs,
     )
 
     logger.debug("SemanticParser output: %s", result.to_dict())

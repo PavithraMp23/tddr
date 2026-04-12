@@ -78,6 +78,7 @@ class TemporalRAGRetriever:
         query_date: Optional[str] = None,
         k: int = 5,
         regulation_filter: Optional[str] = None,
+        version_filters: Optional[List[str]] = None,
     ) -> List[RegulationChunk]:
         """
         Retrieve the top-*k* most relevant regulation chunks for *query*,
@@ -117,6 +118,19 @@ class TemporalRAGRetriever:
             if act_filtered:
                 valid_chunks = act_filtered
             # else: fall back to all temporally-valid chunks
+
+        # Step 1c: version pre-filter
+        if version_filters:
+            ver_filtered = []
+            for c in valid_chunks:
+                if c.version is None:
+                    continue
+                # If ANY version ref is found in the chunk's version string
+                if any(v.lower() in str(c.version).lower() for v in version_filters):
+                    ver_filtered.append(c)
+            
+            if ver_filtered:
+                valid_chunks = ver_filtered
 
         # Step 2: build a temporary mini-store over valid chunks only
         # (avoids rebuilding the full index on every call while still
@@ -209,11 +223,14 @@ class TemporalRAGRetriever:
             if parts and parts[0] != "UNKNOWN_ACT":
                 regulation_filter = parts[0]
 
+        version_filters = structured_query.filters.version_refs
+
         return self.retrieve(
-            query_text,
+            query=query_text,
             query_date=query_date,
-            regulation_filter=regulation_filter,
             k=k,
+            regulation_filter=regulation_filter,
+            version_filters=version_filters,
         )
 
     def __repr__(self) -> str:
