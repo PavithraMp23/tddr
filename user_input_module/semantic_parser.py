@@ -41,6 +41,7 @@ _KNOWN_ACTS = [
     "it act",
     "information technology act",
     "motor vehicles act",
+    "mva",
     "income tax act",
     "customs act",
     "gst act",

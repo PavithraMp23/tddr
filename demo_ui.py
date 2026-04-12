@@ -164,6 +164,7 @@ _DUMMY_DOCS = [
 def _init_rag():
     global _rag_ready, _rag_store, _rag_chunks, _rag_retriever
     try:
+        import glob as _glob
         from rag_module import (
             VectorStore, TemporalRAGRetriever,
             ingest_document, chunk_document, embed_chunks,
@@ -175,10 +176,28 @@ def _init_rag():
             chunks = chunk_document(doc)
             embed_chunks(chunks)
             _rag_chunks.extend(chunks)
+
+        # Ingest real PDFs from the data/ directory
+        data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+        if os.path.isdir(data_dir):
+            pdf_paths = sorted(_glob.glob(os.path.join(data_dir, "*.pdf")))
+            for pdf_path in pdf_paths:
+                try:
+                    print(f"  [RAG] Ingesting PDF: {os.path.basename(pdf_path)} ...")
+                    doc = ingest_document(pdf_path)
+                    chunks = chunk_document(doc)
+                    embed_chunks(chunks)
+                    _rag_chunks.extend(chunks)
+                    print(f"  [RAG]   → {len(chunks)} chunks  "
+                          f"(regulation={doc.regulation}, version={doc.version})")
+                except Exception as pdf_err:
+                    print(f"  [RAG]   ✗ Failed: {pdf_err}")
+
         if _rag_chunks:
             _rag_store.add_chunks(_rag_chunks)
         _rag_retriever = TemporalRAGRetriever(_rag_store, _rag_chunks)
         _rag_ready = True
+        print(f"  [RAG] Ready — {len(_rag_chunks)} total chunks in vector store.")
     except Exception as e:
         print(f"  [RAG] Could not initialise (install deps to enable): {e}")
         _rag_ready = False

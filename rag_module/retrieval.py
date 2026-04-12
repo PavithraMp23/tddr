@@ -77,6 +77,7 @@ class TemporalRAGRetriever:
         query: str,
         query_date: Optional[str] = None,
         k: int = 5,
+        regulation_filter: Optional[str] = None,
     ) -> List[RegulationChunk]:
         """
         Retrieve the top-*k* most relevant regulation chunks for *query*,
@@ -84,11 +85,15 @@ class TemporalRAGRetriever:
 
         Parameters
         ----------
-        query      : The user's natural-language question or search string.
-        query_date : ISO date string ``"YYYY-MM-DD"`` representing the point in
-                     time of the query.  ``None`` means "no temporal constraint"
-                     (all chunks are candidates).
-        k          : Maximum number of results to return.
+        query             : The user's natural-language question or search string.
+        query_date        : ISO date string ``"YYYY-MM-DD"`` representing the point in
+                            time of the query.  ``None`` means "no temporal constraint"
+                            (all chunks are candidates).
+        k                 : Maximum number of results to return.
+        regulation_filter : Canonical regulation token (e.g. ``"MVA"``, ``"IPC"``).
+                            When provided, only chunks whose ``regulation`` matches
+                            (case-insensitive) are considered.  If filtering yields
+                            zero chunks, falls back to all temporally-valid chunks.
 
         Returns
         -------
@@ -102,6 +107,16 @@ class TemporalRAGRetriever:
 
         if not valid_chunks:
             return []
+
+        # Step 1b: regulation pre-filter (if a specific act was detected)
+        if regulation_filter:
+            act_filtered = [
+                c for c in valid_chunks
+                if c.regulation.upper() == regulation_filter.upper()
+            ]
+            if act_filtered:
+                valid_chunks = act_filtered
+            # else: fall back to all temporally-valid chunks
 
         # Step 2: build a temporary mini-store over valid chunks only
         # (avoids rebuilding the full index on every call while still
@@ -184,7 +199,22 @@ class TemporalRAGRetriever:
             # after / as_of / between / in_year — use reference_date as-is
             query_date = ref_date_str
 
-        return self.retrieve(query_text, query_date=query_date, k=k)
+        # Extract canonical act token from the entity normalizer output.
+        # canonical_entity_id has the form "MVA::SECTION::302" — the first
+        # segment is the canonical regulation token.
+        regulation_filter = None
+        ceid = structured_query.filters.canonical_entity_id
+        if ceid:
+            parts = ceid.split("::")
+            if parts and parts[0] != "UNKNOWN_ACT":
+                regulation_filter = parts[0]
+
+        return self.retrieve(
+            query_text,
+            query_date=query_date,
+            regulation_filter=regulation_filter,
+            k=k,
+        )
 
     def __repr__(self) -> str:
         return f"TemporalRAGRetriever(store={self._store}, chunks={len(self._all_chunks)})"

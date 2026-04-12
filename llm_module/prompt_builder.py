@@ -119,3 +119,4 @@ class PromptBuilder:
     def token_estimate(self, prompt: str) -> int:
         """Rough token estimate (1 token ≈ 4 characters for English text)."""
         return max(1, len(prompt) // 4)
+
