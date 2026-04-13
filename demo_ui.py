@@ -181,14 +181,30 @@ def _init_rag():
         # Metadata overrides for PDFs whose filenames don't follow
         # the <REGULATION>_<YEAR>.pdf convention.
         _PDF_META = {
-            "HWM_Rules_2016.pdf":        {"regulation": "HOWM", "version": "2016",
-                                          "effective_from": "2016-04-01"},
-            "Feb_Amendment_HOWM.pdf":     {"regulation": "HOWM", "version": "2016_feb_amd",
-                                          "effective_from": "2016-02-01"},
-            "June_Amendemnet_HOWM.pdf":   {"regulation": "HOWM", "version": "2016_jun_amd",
-                                          "effective_from": "2016-06-01"},
-            "July_Amendment_HOWM.pdf":    {"regulation": "HOWM", "version": "2016_jul_amd",
-                                          "effective_from": "2016-07-01"},
+            # Base consolidated HOWM rules — still active; amendments PATCH it, not replace it.
+            # effective_to stays None so temporal queries for any date >= 2016-04-01 find it.
+            "HWM_Rules_2016.pdf":       {"regulation": "HOWM", "version": "2016",
+                                         "effective_from": "2016-04-01",
+                                         "effective_to": None},
+            # February 2016 draft/preliminary amendment (incorporated before final April rules)
+            "Feb_Amendment_HOWM.pdf":   {"regulation": "HOWM", "version": "2016_feb_amd",
+                                         "effective_from": "2016-02-01",
+                                         "effective_to": "2016-06-30"},
+            # June 2016 amendment
+            "June_Amendemnet_HOWM.pdf": {"regulation": "HOWM", "version": "2016_jun_amd",
+                                         "effective_from": "2016-06-01",
+                                         "effective_to": "2016-06-30"},
+            # July 2016 amendment — last known amendment, open-ended
+            "July_Amendment_HOWM.pdf":  {"regulation": "HOWM", "version": "2016_jul_amd",
+                                         "effective_from": "2016-07-01",
+                                         "effective_to": None},
+            # Motor Vehicles Act versions
+            "mva_1998.pdf":             {"regulation": "MVA", "version": "1988",
+                                         "effective_from": "1988-07-01",
+                                         "effective_to": "2019-08-31"},
+            "mva_2019.pdf":             {"regulation": "MVA", "version": "2019",
+                                         "effective_from": "2019-09-01",
+                                         "effective_to": None},
         }
         data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
         if os.path.isdir(data_dir):
@@ -1504,7 +1520,7 @@ _HTML = """<!DOCTYPE html>
 
   const _BACKEND_HINTS = {
     mock:        'Mock backend requires no setup — ideal for demos and testing.',
-    ollama:      'Runs locally via Ollama. Start Ollama first: ollama serve. Default model: mistral.',
+    ollama:      'Runs locally via Ollama. Start Ollama first: ollama serve. Default model: mistral. You can also use llama3.1:8b, llama3, gemma2, etc.',
     openai:      'Requires an OpenAI API key (sk-...). Default model: gpt-3.5-turbo.',
     huggingface: 'Requires a HuggingFace API key (hf_...) or uses free tier. Default model: mistralai/Mistral-7B-Instruct-v0.1.',
   };

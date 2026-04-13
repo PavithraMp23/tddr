@@ -31,6 +31,16 @@ INSTRUCTIONS:
 5. Keep your answer concise, accurate, and legally precise.
 """
 
+_AMENDMENT_DIRECTIVE = """\
+COMPARISON TASK — The user is asking about changes between regulatory versions.
+You MUST follow these rules:
+1. Identify ALL distinct versions present in the excerpts (e.g. base rules vs Feb amendment vs July amendment).
+2. For each version, extract the SPECIFIC CLAUSES that differ.
+3. List EXACTLY what was ADDED, DELETED, or MODIFIED — quote the before/after text wherever possible.
+4. Do NOT say "amended N times" — state the SPECIFIC TEXT CHANGES for each amendment.
+5. Structure your answer as: Version A → Version B: [what changed].
+"""
+
 _ANSWER_FORMAT = """\
 Respond in the following exact format (no extra keys, no markdown headers):
 
@@ -77,6 +87,14 @@ class PromptBuilder:
         parts.append(_SYSTEM_PREAMBLE.strip())
         parts.append("")
 
+        # ── Intent-aware directive ────────────────────────────────────────────
+        # When the user is comparing amendments, inject the comparison task
+        # so the LLM lists specific text changes instead of counting amendments.
+        intent = getattr(structured_query.intermediate, "intent", "general")
+        if intent == "amendment_inquiry":
+            parts.append(_AMENDMENT_DIRECTIVE.strip())
+            parts.append("")
+
         # ── Reference date ───────────────────────────────────────────────────
         ref_date = (
             structured_query.filters.valid_time.reference_date
@@ -96,10 +114,12 @@ class PromptBuilder:
                     f"(active: {chunk.effective_from} – {eff_to})"
                 )
                 parts.append(header)
-                # Truncate very long chunks to keep prompt manageable
+                # Truncate very long chunks to keep prompt manageable.
+                # Amendment queries need more chars to show before/after text.
+                max_chars = 2500 if intent == "amendment_inquiry" else 1500
                 text = chunk.text.strip()
-                if len(text) > 1500:
-                    text = text[:1497] + "..."
+                if len(text) > max_chars:
+                    text = text[:max_chars - 3] + "..."
                 parts.append(text)
                 parts.append("")
         else:
